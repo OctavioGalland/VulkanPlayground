@@ -5,8 +5,9 @@ This is just a testbed for learning and experimenting with Vulkan, it is not mea
 ## Requirements
 
 - Vulkan 1.0 capable GPU
-- SDL2
 - LunarG SDK
+- SDL2
+- GLM
 
 ## Building
 
