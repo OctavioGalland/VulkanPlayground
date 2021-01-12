@@ -3,6 +3,8 @@
 
 #include <vulkan/vulkan.h>
 
+#define CLAMP(x, lo, hi)    ((x) < (lo) ? (lo) : (x) > (hi) ? (hi) : (x))
+
 #define ASSERT_RESULT(funCall, res, errorMsg) if (funCall != res) { panic(errorMsg); }
 
 #define ENUMERATE_OBJECTS(container, funCall1, funCall2, errorMsg) \
@@ -22,5 +24,6 @@
     }
 
 void panic (const char *msg);
+void log (const char *msg);
 
 #endif // _VULKAN_UTILS_H_

@@ -1,6 +1,6 @@
 CXX=g++
-CFLAGS=-std=c++14 -Iinc -I$(VULKAN_SDK)/include
-LFLAGS=-lSDL2 -lvulkan
+CFLAGS=-std=c++14 -Iinc -I$(VULKAN_SDK)/include -Wall
+LFLAGS=-lSDL2 -lvulkan -Wall
 BIN=vulkan
 SRC=$(wildcard src/*.cpp)
 OBJ=$(patsubst src/%,obj/%,$(patsubst %.cpp,%.o,$(SRC)))
@@ -19,4 +19,4 @@ run: $(BIN)
 	./$(BIN)
 
 clean:
-	rm $(BIN) $(OBJ)
+	rm $(BIN) obj/*
