@@ -1,6 +1,6 @@
 CXX=g++
-CFLAGS=-std=c++14 -Iinc -I$(VULKAN_SDK)/include -Wall
-LFLAGS=-lSDL2 -lvulkan -Wall
+CFLAGS=-std=c++14 -Iinc -I$(VULKAN_SDK)/include -Wall -g
+LFLAGS=-lSDL2 -lvulkan -Wall -g
 BIN=vulkan
 SRC=$(wildcard src/*.cpp)
 OBJ=$(patsubst src/%,obj/%,$(patsubst %.cpp,%.o,$(SRC)))
