@@ -8,6 +8,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
 
+#include "vulkan/vulkan_core.h"
 #include "vulkanUtils.h"
 
 std::vector<const char*> requiredDeviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
@@ -254,7 +255,7 @@ VkResult createLogicalDevice (const VkPhysicalDevice& physicalDevice, VkDevice* 
     return vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, device);
 }
 
-void retrieveQueues(const VkDevice& device, uint32_t graphicsQueueIndex, uint32_t presentQueueIndex, VkQueue *graphicsQueue, VkQueue *presentQueue) {
+void retrieveQueues (const VkDevice& device, uint32_t graphicsQueueIndex, uint32_t presentQueueIndex, VkQueue *graphicsQueue, VkQueue *presentQueue) {
     vkGetDeviceQueue(device, graphicsQueueIndex, 0, graphicsQueue);
     if (graphicsQueueIndex == presentQueueIndex) {
         (*presentQueue) = (*graphicsQueue);
@@ -342,6 +343,45 @@ VkResult createSwapchain (const VkPhysicalDevice& physicalDevice, const VkDevice
     return vkCreateSwapchainKHR(device, &swapchainCreateInfo, nullptr, swapchain);
 }
 
+VkResult createSemaphore (VkDevice device, VkSemaphore *semaphore) {
+    VkSemaphoreCreateInfo semaphoreCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0
+    };
+    return vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, semaphore);
+}
+
+VkResult createFence (VkDevice device, VkFence *fence) {
+    VkFenceCreateInfo fenceCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0
+    };
+    return vkCreateFence(device, &fenceCreateInfo, nullptr, fence);
+}
+
+VkResult createCommandPool (VkDevice device, uint32_t queueIndex, VkCommandPool *pool) {
+    VkCommandPoolCreateInfo cmdPoolCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = queueIndex
+    };
+    return vkCreateCommandPool(device, &cmdPoolCreateInfo, nullptr, pool);
+}
+
+VkResult allocateCommandBuffer (VkDevice device, VkCommandPool pool, VkCommandBuffer *buffer) {
+    VkCommandBufferAllocateInfo cmdAllocInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .commandPool = pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
+    return vkAllocateCommandBuffers(device, &cmdAllocInfo, buffer);
+}
+
 int main (int argc, char *argv[]) {
     SDL_Window *window = nullptr;
     VkInstance vulkanInstance;
@@ -353,8 +393,11 @@ int main (int argc, char *argv[]) {
     VkQueue graphicsQueue, presentQueue;
     VkSwapchainKHR swapchain;
     std::vector<VkImage> swapchainImages;
-    VkFence swapchainImageFence;
+    VkSemaphore semaphore;
     uint32_t swapchainImageIndex;
+    VkCommandBuffer presentCmdBuffer, graphicsCmdBuffer;
+    VkCommandPool presentCmdPool, graphicsCmdPool;
+    VkFence fence;
 
     if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
         panic("Failed to initialize SDL2");
@@ -376,13 +419,66 @@ int main (int argc, char *argv[]) {
 
     ENUMERATE_OBJECTS(swapchainImages, vkGetSwapchainImagesKHR(vulkanDevice, swapchain, &size, nullptr), vkGetSwapchainImagesKHR(vulkanDevice,swapchain, &size, swapchainImages.data()), "Failed to get swap chain images");
 
-    VkFenceCreateInfo fenceCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0
-    };
-    ASSERT_RESULT(vkCreateFence(vulkanDevice, &fenceCreateInfo, nullptr, &swapchainImageFence), VK_SUCCESS, "Error creating Vulkan fence");
 
+    ASSERT_RESULT(createSemaphore(vulkanDevice, &semaphore), VK_SUCCESS, "Failed to create Vulkan semaphore");
+    ASSERT_RESULT(createFence(vulkanDevice, &fence), VK_SUCCESS, "Failed to create Vulkan fence");
+
+    ASSERT_RESULT(createCommandPool(vulkanDevice, presentQueueIndex, &presentCmdPool), VK_SUCCESS, "Failed to create present command pool");
+    ASSERT_RESULT(createCommandPool(vulkanDevice, graphicsQueueIndex, &graphicsCmdPool), VK_SUCCESS, "Failed to create graphics command pool");
+
+    ASSERT_RESULT(allocateCommandBuffer(vulkanDevice, graphicsCmdPool, &graphicsCmdBuffer), VK_SUCCESS, "Failed to allocate graphics command buffer");
+    ASSERT_RESULT(allocateCommandBuffer(vulkanDevice, presentCmdPool, &presentCmdBuffer), VK_SUCCESS, "Failed to allocate present command buffer");
+
+    VkResult presentResult = VK_SUCCESS;
+    VkPresentInfoKHR presentInfo = {
+        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = NULL,
+        .swapchainCount = 1,
+        .pSwapchains = &swapchain,
+        .pImageIndices = &swapchainImageIndex,
+        .pResults = &presentResult
+    };
+
+    VkCommandBufferBeginInfo presentBeginInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = nullptr,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = nullptr
+    };
+
+    VkImageMemoryBarrier imageBarrier = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = 0,
+        .dstAccessMask = 0,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = (graphicsQueueIndex == presentQueueIndex ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR),
+        .srcQueueFamilyIndex = presentQueueIndex,
+        .dstQueueFamilyIndex = presentQueueIndex,
+        .image = swapchainImages[0],
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+
+    VkPipelineStageFlags top = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    VkSubmitInfo submitInfo = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &semaphore,
+        .pWaitDstStageMask = &top,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &presentCmdBuffer,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = nullptr
+    };
     bool running = true;
     while (running) {
         SDL_Event ev;
@@ -396,9 +492,27 @@ int main (int argc, char *argv[]) {
             }
         }
 
+        ASSERT_RESULT(vkAcquireNextImageKHR(vulkanDevice, swapchain, UINT64_MAX, semaphore, VK_NULL_HANDLE, &swapchainImageIndex), VK_SUCCESS,
+                "Failed to acquire swapchian image");
+
+        ASSERT_RESULT(vkBeginCommandBuffer(presentCmdBuffer, &presentBeginInfo), VK_SUCCESS, "Failed to begin recording command buffer");
+        imageBarrier.image = swapchainImages[swapchainImageIndex];
+        vkCmdPipelineBarrier(presentCmdBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageBarrier);
+        ASSERT_RESULT(vkEndCommandBuffer(presentCmdBuffer), VK_SUCCESS, "Failed to begin recording command buffer");
+        ASSERT_RESULT(vkQueueSubmit(presentQueue, 1, &submitInfo, fence), VK_SUCCESS, "Failed to submit presentation command buffer");
+
+        ASSERT_RESULT(vkWaitForFences(vulkanDevice, 1, &fence, VK_TRUE, UINT64_MAX), VK_SUCCESS, "Failed to wait for presentation queue fence");
+        ASSERT_RESULT(vkResetFences(vulkanDevice, 1, &fence), VK_SUCCESS, "Failed to wait for presentation queue fence");
+
+        ASSERT_RESULT(vkQueuePresentKHR(presentQueue, &presentInfo), VK_SUCCESS, "Failed to queue image presentation");
     }
 
-    vkDestroyFence(vulkanDevice, swapchainImageFence, nullptr);
+    vkDestroyFence(vulkanDevice, fence, nullptr);
+    vkFreeCommandBuffers(vulkanDevice, graphicsCmdPool, 1, &graphicsCmdBuffer);
+    vkFreeCommandBuffers(vulkanDevice, presentCmdPool, 1, &presentCmdBuffer);
+    vkDestroyCommandPool(vulkanDevice, graphicsCmdPool, nullptr);
+    vkDestroyCommandPool(vulkanDevice, presentCmdPool, nullptr);
+    vkDestroySemaphore(vulkanDevice, semaphore, nullptr);
     vkDestroySwapchainKHR(vulkanDevice, swapchain, nullptr);
     vkDestroyDevice(vulkanDevice, nullptr);
     destroyDebugMessenger(vulkanInstance, debugMessenger);
