@@ -8,7 +8,6 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
 
-#include "vulkan/vulkan_core.h"
 #include "vulkanUtils.h"
 
 std::vector<const char*> requiredDeviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
@@ -91,7 +90,7 @@ VkResult createVulkanInstance (SDL_Window* window, VkInstance* res) {
     return vkCreateInstance(&instanceCreateInfo, nullptr, res);
 }
 
-VkResult createDebugMessenger (const VkInstance& instance, PFN_vkDebugUtilsMessengerCallbackEXT callback, VkDebugUtilsMessengerEXT* debugMessenger) {
+VkResult createDebugMessenger (VkInstance instance, PFN_vkDebugUtilsMessengerCallbackEXT callback, VkDebugUtilsMessengerEXT* debugMessenger) {
     VkDebugUtilsMessengerCreateInfoEXT debugMessengerCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
         .pNext = nullptr,
@@ -113,7 +112,7 @@ VkResult createDebugMessenger (const VkInstance& instance, PFN_vkDebugUtilsMesse
     return vkCreateDebugUtilsMessengerEXT(instance, &debugMessengerCreateInfo, nullptr, debugMessenger);
 }
 
-void destroyDebugMessenger (const VkInstance& instance, const VkDebugUtilsMessengerEXT& messenger) {
+void destroyDebugMessenger (VkInstance instance, VkDebugUtilsMessengerEXT messenger) {
     void (*vkDestroyDebugUtilsMessengerEXT)(VkInstance, VkDebugUtilsMessengerEXT, const VkAllocationCallbacks*) = 
         (void (*)(VkInstance, VkDebugUtilsMessengerEXT, const VkAllocationCallbacks*)) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
 
@@ -124,7 +123,7 @@ void destroyDebugMessenger (const VkInstance& instance, const VkDebugUtilsMessen
     vkDestroyDebugUtilsMessengerEXT(instance, messenger, nullptr);
 }
 
-void pickPhysicalDevice (const VkInstance& instance, const VkSurfaceKHR& surface, VkPhysicalDevice *physicalDevice,
+void pickPhysicalDevice (VkInstance instance, VkSurfaceKHR surface, VkPhysicalDevice *physicalDevice,
         uint32_t& graphicsQueueIndex, uint32_t& presentQueueIndex) {
     std::vector<VkPhysicalDevice> devices;
     ENUMERATE_OBJECTS(devices, vkEnumeratePhysicalDevices(instance, &size, NULL), vkEnumeratePhysicalDevices(instance, &size, devices.data()),
@@ -217,7 +216,7 @@ void pickPhysicalDevice (const VkInstance& instance, const VkSurfaceKHR& surface
     }
 }
 
-VkResult createLogicalDevice (const VkPhysicalDevice& physicalDevice, VkDevice* device, uint32_t graphicsQueueIndex, uint32_t presentQueueIndex) {
+VkResult createLogicalDevice (VkPhysicalDevice physicalDevice, VkDevice* device, uint32_t graphicsQueueIndex, uint32_t presentQueueIndex) {
     float one =  1.0f;
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos {
         {
@@ -255,7 +254,7 @@ VkResult createLogicalDevice (const VkPhysicalDevice& physicalDevice, VkDevice* 
     return vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, device);
 }
 
-void retrieveQueues (const VkDevice& device, uint32_t graphicsQueueIndex, uint32_t presentQueueIndex, VkQueue *graphicsQueue, VkQueue *presentQueue) {
+void retrieveQueues (VkDevice device, uint32_t graphicsQueueIndex, uint32_t presentQueueIndex, VkQueue *graphicsQueue, VkQueue *presentQueue) {
     vkGetDeviceQueue(device, graphicsQueueIndex, 0, graphicsQueue);
     if (graphicsQueueIndex == presentQueueIndex) {
         (*presentQueue) = (*graphicsQueue);
@@ -264,7 +263,7 @@ void retrieveQueues (const VkDevice& device, uint32_t graphicsQueueIndex, uint32
     }
 }
 
-VkResult createSwapchain (const VkPhysicalDevice& physicalDevice, const VkDevice& device, const VkSurfaceKHR& surface, SDL_Window* window,
+VkResult createSwapchain (VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, SDL_Window* window,
         uint32_t graphicsQueueIndex, uint32_t presentQueueIndex, VkSwapchainKHR *swapchain) {
     VkSurfaceCapabilitiesKHR surfaceCapabilities;
     VkExtent2D extent;
@@ -497,7 +496,7 @@ int main (int argc, char *argv[]) {
 
         ASSERT_RESULT(vkBeginCommandBuffer(presentCmdBuffer, &presentBeginInfo), VK_SUCCESS, "Failed to begin recording command buffer");
         imageBarrier.image = swapchainImages[swapchainImageIndex];
-        vkCmdPipelineBarrier(presentCmdBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageBarrier);
+        vkCmdPipelineBarrier(presentCmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageBarrier);
         ASSERT_RESULT(vkEndCommandBuffer(presentCmdBuffer), VK_SUCCESS, "Failed to begin recording command buffer");
         ASSERT_RESULT(vkQueueSubmit(presentQueue, 1, &submitInfo, fence), VK_SUCCESS, "Failed to submit presentation command buffer");
 
